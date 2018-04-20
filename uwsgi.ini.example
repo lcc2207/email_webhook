@@ -1,0 +1,17 @@
+[uwsgi]
+chdir = /opt/ipam-webhook
+http-socket = 0.0.0.0:5020
+wsgi-file = webhook.py
+callable = app
+workers = 5
+master = true
+uid = uwsgi
+die-on-term = true
+plugin = python
+env = SCALR_SIGNING_KEY=scalr_webhook_signinkey
+env = DOMAIN_GV=DOMAIN
+env = BACKEND_ENDPOINT=https://infoblox.molina.mhc/wapi/v2.0/
+env = BACKEND_USER=autoteamapi
+env = BACKEND_PASS=pass
+# Comment the following line if the certificate of the endpoint is publicly trusted
+env = BACKEND_VERIFY=false
