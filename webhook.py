@@ -21,7 +21,7 @@ app = Flask(__name__)
 # Configuration variables
 SCALR_SIGNING_KEY = os.getenv('SCALR_SIGNING_KEY', '')
 DOMAIN_GV = os.getenv('DOMAIN_GV', 'DOMAIN')
-BACKEND_ENDPOINT = os.getenv('BACKEND_ENDPOINT', 'https://infoblox.molina.mhc/wapi/v2.0/')
+BACKEND_ENDPOINT = os.getenv('BACKEND_ENDPOINT', 'https://xx/wapi/v2.0/')
 BACKEND_USER = os.getenv('BACKEND_USER', 'autoteamapi')
 BACKEND_PASS = os.getenv('BACKEND_PASS', '')
 BACKEND_VERIFY = os.getenv('BACKEND_VERIFY', 'true').lower() == 'true'
