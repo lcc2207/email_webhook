@@ -11,7 +11,7 @@ docker build -t $dockername \
     --build-arg https_proxy=$https_proxy \
     .
 
-docker run -p 5020:5020 -d \
+docker run -p 5000:5000 -d \
     --restart=always \
     --name $dockername \
     $dockername
