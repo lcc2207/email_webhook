@@ -9,6 +9,8 @@ uid = uwsgi
 die-on-term = true
 plugin = python
 env = SCALR_SIGNING_KEY=scalr_webhook_signinkey
+env = SMTP_SERVER=172.31.29.93
+env = SMTP_FROM=demo@scalr.com
 env = DOMAIN_GV=DOMAIN
 env = BACKEND_ENDPOINT=https://xxxwapi/v2.0/
 env = BACKEND_USER=autoteamapi

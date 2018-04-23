@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+import smtplib
 from datetime import datetime
 from hashlib import sha1
 
@@ -20,9 +21,11 @@ app = Flask(__name__)
 
 # Configuration variables
 SCALR_SIGNING_KEY = os.getenv('SCALR_SIGNING_KEY', '')
-DOMAIN_GV = os.getenv('DOMAIN_GV', 'DOMAIN')
-BACKEND_ENDPOINT = os.getenv('BACKEND_ENDPOINT', 'https://xx/wapi/v2.0/')
-BACKEND_USER = os.getenv('BACKEND_USER', 'autoteamapi')
+SMTP_SERVER = os.getenv('SMTP_SERVER', '')
+SMTP_FROM = os.getenv('SMTP_FROM', '')
+SMTP_PORT = os.getenv('SMTP_PORT', 25)
+BACKEND_ENDPOINT = os.getenv('BACKEND_ENDPOINT', '')
+BACKEND_USER = os.getenv('BACKEND_USER', '')
 BACKEND_PASS = os.getenv('BACKEND_PASS', '')
 BACKEND_VERIFY = os.getenv('BACKEND_VERIFY', 'true').lower() == 'true'
 # The maximum time allowed between the moment a request is signed and the moment the signature stops
@@ -31,12 +34,12 @@ MAX_AGE_SIGNATURE = 300
 
 # Print configuration
 logging.info("> Configuration variables")
-for var in ['SCALR_SIGNING_KEY', 'DOMAIN_GV', 'BACKEND_ENDPOINT',
+for var in ['SCALR_SIGNING_KEY', 'SMTP_SERVER', 'BACKEND_ENDPOINT',
             'BACKEND_USER', 'BACKEND_PASS', 'BACKEND_VERIFY']:
     logging.info('Config: %s = %s', var, globals()[var] if 'PASS' not in var else '*' * len(globals()[var]))
 
 
-@app.route("/infoblox/", methods=['POST'])
+@app.route("/sendmail/", methods=['POST'])
 def webhook_listener():
     """ Handle webhook requests sent by Scalr. """
     logging.debug("Received request with payload = %s", request.data)
@@ -54,174 +57,43 @@ def webhook_listener():
         logging.warn('Invalid request received')
         abort(400)
 
-    if data['eventName'] == 'AllocateIpAddressRequest':
-        return acquire_ip(
-            subnet=data['userData'],
+    if data['eventName'] == 'testemail':
+        return sendmail(
+            smtp_server=SMTP_SERVER,
+            smtp_from=SMTP_FROM,
+            smtp_to=data['userData'].split(),
+            smtp_port=SMTP_PORT,
             host=data['data'].get('SCALR_SERVER_HOSTNAME'),
-            domain=data['data'].get(DOMAIN_GV),
+            data=data,
         )
-    elif data['eventName'] == 'DeregisterIpAddressRequest':
-        # We are not using the IP address sent by Scalr
-        return release_ip(
-            host=data['data'].get('SCALR_SERVER_HOSTNAME'),
-            domain=data['data'].get(DOMAIN_GV),
-        )
-    elif data['eventName'] == 'RegisterIpAddressRequest':
-        # We don't need to handle this event as we already register the IP during the allocate operation
-        logging.info("Ignoring Register call for address %s", data['data'].get('SCALR_IP_ADDRESS'))
-        return jsonify({'success': True})
     else:
         logging.warn('Received request for unhandled event %s', data['eventName'])
         return jsonify({'success': False})
 
 
-def acquire_ip(subnet, host, domain):
-    """ Send a call to the backend API to acquire an IP """
+def sendmail(smtp_server, smtp_from, smtp_to, smtp_port, host, data):
+    try:
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.set_debuglevel(1)
+        msg = "Hello!\n Host: " + host + " is complete"
+        logging.warn(smtp_to)
+        server.sendmail(smtp_from, smtp_to, msg)
 
-    if domain:
-        fqdn = '{}.{}'.format(host, domain)
-    else:
-        fqdn = host
-
-    payload = {
-        'name': fqdn.lower(),
-        'configure_for_dns': True,
-        'ipv4addrs': [
-            {
-                'ipv4addr': 'func:nextavailableip:' + subnet
-            }
-        ],
+    except ConnectionError as e:
+        logging.error("Backend failure: %s", e)
+        return jsonify({'success': False, 'msg': 'Cannot connect to backend: {}'.format(e)}), 500
+    except ValueError as e:
+        logging.error("Backend failure: %s", e)
+        return jsonify({'success': False, 'msg': 'Invalid response from backend: {}'.format(e)}), 500
+    except Exception as e:
+        logging.error("Backend failure: %s", e)
+        return jsonify({'success': False, 'msg': 'Backend failure: {}'.format(e)}), 500
+    webhook_response = {
+        'success': True,
     }
-
-    try:
-        # Do the request to the backend
-        data = backend_call(
-            'POST',
-            BACKEND_ENDPOINT + 'record:host' +
-            '?_return_fields%2B=name,ipv4addrs&_return_as_object=1',
-            payload)
-    except ConnectionError as e:
-        logging.error("Backend failure: %s", e)
-        return jsonify({'success': False, 'msg': 'Cannot connect to backend: {}'.format(e)}), 500
-    except ValueError as e:
-        logging.error("Backend failure: %s", e)
-        return jsonify({'success': False, 'msg': 'Invalid response from backend: {}'.format(e)}), 500
-    except Exception as e:
-        logging.error("Backend failure: %s", e)
-        return jsonify({'success': False, 'msg': 'Backend failure: {}'.format(e)}), 500
-
-    logging.debug('Infoblox response: %s', data)
-
-    if 'result' not in data:
-        logging.error('Cannot understand response.')
-        return jsonify(msg='Invalid Infoblox response', body=data), 500
-
-    for ipv4 in data['result']['ipv4addrs']:
-        # Take the first IPv4 in the list
-        ip_address = ipv4['ipv4addr']
-        webhook_response = {
-            'success': True,
-            'ip_address': ip_address,
-        }
-        logging.debug('Returning payload to scalr server: %s', webhook_response)
-        return jsonify(webhook_response)
-
-    logging.error("Unable to find any IPv4 address in %s", data['result'])
-    return jsonify(msg='Invalid Infoblox response', body=data), 500
-
-
-def release_ip(host, domain):
-    """ Send a call to the backend API to release an IP """
-
-    logging.debug("Trying to release IP for %s domain=%s", host, domain)
-    if domain:
-        fqdn = '{}.{}'.format(host, domain)
-    else:
-        fqdn = host
-
-    try:
-        # Do the request to the backend
-        result = backend_call('GET', BACKEND_ENDPOINT + 'record:host?name={}'.format(fqdn.lower()), {})
-
-        if not result:
-            logging.info("Unable to find the host to remove, ignoring.")
-            return jsonify({'success': True, 'msg': "No host removed as none matched %s" % fqdn})
-        # Get the _ref
-        ref = result[0]['_ref']
-        # Actually delete the record
-        data = backend_call('DELETE', BACKEND_ENDPOINT + ref, {})
-    except ConnectionError as e:
-        logging.error("Backend failure: %s", e)
-        return jsonify({'success': False, 'msg': 'Cannot connect to backend: {}'.format(e)}), 500
-    except ValueError as e:
-        logging.error("Backend failure: %s", e)
-        return jsonify({'success': False, 'msg': 'Invalid response from backend: {}'.format(e)}), 500
-    except Exception as e:
-        logging.error("Backend failure: %s", e)
-        return jsonify({'success': False, 'msg': 'Backend failure: {}'.format(e)}), 500
-
-    logging.info('Released IP for server %s! Server returned: %s', fqdn, data)
-    return jsonify({'success': True})
-
-
-@app.route('/sample/<path:path>', methods=['GET', 'POST'])
-def test_route(path):
-    """
-    Sample route used for manual testing.
-
-    Just set the BACKEND_ENDPOINT value to the URL of this running webhook, with the URL /sample. It
-    will return test data, that is considered valid by the webhook.
-    """
-    # return jsonify({
-    #     "ipaddress": "10.0.0.42",
-    #     "netmask": "255.255.254.0",
-    #     "responsecode": "SUCCESS",
-    #     "responsemessage": "IP address 10.0.0.42 is added to the hostname CloudTest.",
-    #     "iserror": "false",
-    #     "issuccess": True,
-    #     "transactionid": "5fce5c30-23aa-48ab-950c-bd943f768ef4",
-    # })
-    logging.debug('Sample route received request for path: %s', path)
-
-    return jsonify({
-            'result': {
-                'ipv4addrs': [
-                    {
-                        'ipv4addr': '10.0.0.10'
-                    }
-                ]
-            }
-        })
-
-
-def backend_call(method, route, payload):
-    """
-    Do a request on backend's route, with the given method and payload.
-
-    May raise
-    * ConnectionError if the backend could not be reached,
-    * ValueError if the returned data is not JSON,
-    """
-
-    logging.debug("Sending %s request to backend (%s) with payload %s", method, route, payload)
-
-    # Do the request to the backend
-    start = time.time()
-    r = requests.request(
-        method, route,
-        json=payload,
-        verify=BACKEND_VERIFY,
-        auth=HTTPBasicAuth(BACKEND_USER, BACKEND_PASS),
-    )
-
-    roundtrip = time.time() - start
-    logging.info('Backend response time: %s', roundtrip)
-    logging.debug('Backend response: %d %s', r.status_code, r.text)
-
-    # Parse the backend response
-    data = r.json()
-
-    return data
+    logging.debug('email response: %s', data)
+    logging.debug('Returning payload to scalr server: %s', webhook_response)
+    return jsonify(webhook_response)
 
 
 def validate_request(request):
