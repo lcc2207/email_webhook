@@ -1,0 +1,7 @@
+version: '2'
+services:
+  email-webhook:
+    image: email-webhook
+    container_name: email-webhook
+    ports:
+      - "5000:5000"
