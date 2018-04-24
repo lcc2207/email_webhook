@@ -1,18 +1,32 @@
 # IPAM webhook
 
+## Prerequisites
+- Docker installed on the webhook server
+- SMTP relay server
+
 ## Scalr setup
 
-In Scalr, create a webhook endpoint with url:
+Log into Scalr at the global scope, and click on Webhooks in the main menu.
+In the Endpoints section, create a new endpoint with URL: `http://<webhook server IP>:5000/sendmail/`
+
+Note down the *signing key* that Scalr generated, we will need it later.
+
+The following Global Variable will need to be added in Scalr for the email recipient:
 ```
-    http://<webhook server IP>:5000/sendmail/
+smtp_to
 ```
 
-Then, for each email recipent that you intend to notify with Scalr:
- - In the Advanced Webhook configuration, set the user data to the email address (e.g. demo1@scalr.com) each address on a
-   new line
+## Webhook handler setup
+```
+mkdir -p /opt/email-webhook/
+cd /opt/email-webhook/
+git clone https://github.com/scalr-tutorials/email_webhook.git .
+```
 
-
-## Configuration
+- Install the Python dependencies
+```
+pip install -r requirements.txt -U
+```
 
 Create the configuration file:
 ```bash
