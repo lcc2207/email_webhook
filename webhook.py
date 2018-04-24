@@ -24,9 +24,7 @@ SCALR_SIGNING_KEY = os.getenv('SCALR_SIGNING_KEY', '')
 SMTP_SERVER = os.getenv('SMTP_SERVER', '')
 SMTP_FROM = os.getenv('SMTP_FROM', '')
 SMTP_PORT = os.getenv('SMTP_PORT', 25)
-BACKEND_ENDPOINT = os.getenv('BACKEND_ENDPOINT', '')
-BACKEND_USER = os.getenv('BACKEND_USER', '')
-BACKEND_PASS = os.getenv('BACKEND_PASS', '')
+SMTP_TO = os.getenv('SMTP_TO', '')
 BACKEND_VERIFY = os.getenv('BACKEND_VERIFY', 'true').lower() == 'true'
 # The maximum time allowed between the moment a request is signed and the moment the signature stops
 # being valid (in seconds)
@@ -34,8 +32,7 @@ MAX_AGE_SIGNATURE = 300
 
 # Print configuration
 logging.info("> Configuration variables")
-for var in ['SCALR_SIGNING_KEY', 'SMTP_SERVER', 'BACKEND_ENDPOINT',
-            'BACKEND_USER', 'BACKEND_PASS', 'BACKEND_VERIFY']:
+for var in ['SCALR_SIGNING_KEY', 'SMTP_SERVER', 'BACKEND_VERIFY']:
     logging.info('Config: %s = %s', var, globals()[var] if 'PASS' not in var else '*' * len(globals()[var]))
 
 
@@ -61,7 +58,7 @@ def webhook_listener():
         return sendmail(
             smtp_server=SMTP_SERVER,
             smtp_from=SMTP_FROM,
-            smtp_to=data['userData'].split(),
+            smtp_to=data['data'].get(SMTP_TO).split(),
             smtp_port=SMTP_PORT,
             host=data['data'].get('SCALR_SERVER_HOSTNAME'),
             data=data,
