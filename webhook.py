@@ -54,7 +54,7 @@ def webhook_listener():
         logging.warn('Invalid request received')
         abort(400)
 
-    if data['eventName'] == 'testemail':
+    if data['eventName'] == 'HostUp':
         return sendmail(
             smtp_server=SMTP_SERVER,
             smtp_from=SMTP_FROM,
