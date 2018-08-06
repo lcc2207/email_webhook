@@ -1,4 +1,4 @@
-# IPAM webhook
+# Email webhook
 
 ## Prerequisites
 - Docker installed on the webhook server
